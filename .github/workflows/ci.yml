@@ -1,20 +1,52 @@
 name: ci
 
-on: push
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.6, 3.7, 3.8]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      BUY_LAMBO_BTC_NET: regtest
+      BUY_LAMBO_RPC_USER: rpcuser
+      BUY_LAMBO_RPC_PASSWORD: rpcpassword
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - name: Check out repository
+        uses: actions/checkout@v6
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: |
-          python -m pip install --upgrade pip
-          pip install .
-      - run: |
-          create_HODL_address --priv_key cNxmxYnXjdH8j1JwumuSF5HtLpjSDHv7x4ZWUQSf16mF4RxaYFnt --lock 115 | grep -Fxq "Time-locked address: 2N38r136aKrPs6LQmKY1gE3gj85XX5Na4cJ"
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: setup.py
+
+      - name: Install package and dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install .
+          python -m pip check
+
+      - name: Check syntax and public imports
+        run: |
+          python -m compileall -q buy_lambo setup.py
+          python -m py_compile bin/buy_lambo bin/create_HODL_address
+          python -c "from buy_lambo import buy_lambo, create_HODL_address; assert callable(buy_lambo) and callable(create_HODL_address)"
+
+      - name: Verify time-locked address generation
+        shell: bash
+        run: |
+          # Public regtest fixture retained from the original workflow; no node needed.
+          actual="$(create_HODL_address --priv_key cNxmxYnXjdH8j1JwumuSF5HtLpjSDHv7x4ZWUQSf16mF4RxaYFnt --lock 115)"
+          expected="Time-locked address: 2N38r136aKrPs6LQmKY1gE3gj85XX5Na4cJ"
+          printf '%s\n' "$actual"
+          test "$actual" = "$expected"
