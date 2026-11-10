@@ -42,6 +42,26 @@ jobs:
           python -m py_compile bin/buy_lambo bin/create_HODL_address
           python -c "from buy_lambo import buy_lambo, create_HODL_address; assert callable(buy_lambo) and callable(create_HODL_address)"
 
+      - name: Enable RIPEMD-160 for the legacy Bitcoin library
+        shell: bash
+        run: |
+          # Keep this OpenSSL configuration scoped to the CI job.
+          config="$RUNNER_TEMP/buy-lambo-openssl.cnf"
+          cat > "$config" <<'EOF'
+          openssl_conf = openssl_init
+          [openssl_init]
+          providers = provider_sect
+          [provider_sect]
+          default = default_sect
+          legacy = legacy_sect
+          [default_sect]
+          activate = 1
+          [legacy_sect]
+          activate = 1
+          EOF
+          echo "OPENSSL_CONF=$config" >> "$GITHUB_ENV"
+          OPENSSL_CONF="$config" python -c "import hashlib; assert hashlib.new('ripemd160', b'').hexdigest() == '9c1185a5c5e9fc54612808977ee8f548b2258d31'"
+
       - name: Verify time-locked address generation
         shell: bash
         run: |
@@ -50,3 +70,4 @@ jobs:
           expected="Time-locked address: 2N38r136aKrPs6LQmKY1gE3gj85XX5Na4cJ"
           printf '%s\n' "$actual"
           test "$actual" = "$expected"
+
